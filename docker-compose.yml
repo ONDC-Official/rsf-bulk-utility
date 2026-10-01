@@ -16,9 +16,11 @@ services:
       retries: 20
 
   api:
-    build: .
+    image: ghcr.io/ondc-official/rsf-bulk-utility-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     restart: unless-stopped
-    command: node server/index.js
     environment:
       PORT: 3000
       MONGODB_URI: mongodb://${MONGO_USER:-rsf_mock}:${MONGO_PASSWORD:-local_mock_only}@mongo:27017/rsf_utility?authSource=admin
@@ -42,15 +44,15 @@ services:
       - "3000:3000"
 
   web:
-    build: .
+    image: ghcr.io/ondc-official/rsf-bulk-utility-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     restart: unless-stopped
-    command: npm run dev
-    environment:
-      API_TARGET: http://api:3000
     depends_on:
       - api
     ports:
-      - "5173:5173"
+      - "5173:80"
 
 volumes:
   mongo_data:
