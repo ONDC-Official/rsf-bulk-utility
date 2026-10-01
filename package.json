@@ -1,0 +1,28 @@
+{
+  "name": "ondc-rsf-utility",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "api": "node --env-file=.env server/index.js",
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "start": "node --env-file=.env server/index.js",
+    "test": "node --test server/*.test.js"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "mongodb": "6.20.0",
+    "ondc-crypto-sdk-nodejs": "2.1.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "libsodium-wrappers": "0.7.16",
+    "vite": "^6.4.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

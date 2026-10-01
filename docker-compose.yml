@@ -1,0 +1,56 @@
+services:
+  mongo:
+    image: mongodb/mongodb-community-server:8.0-ubi8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-rsf_mock}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-local_mock_only}
+    ports:
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    command: node server/index.js
+    environment:
+      PORT: 3000
+      MONGODB_URI: mongodb://${MONGO_USER:-rsf_mock}:${MONGO_PASSWORD:-local_mock_only}@mongo:27017/rsf_utility?authSource=admin
+      DATABASE_NAME: rsf_utility
+      MOCK_NP_URL: http://api:3000/mock-np
+      SEED_DEMO: ${SEED_DEMO:-true}
+      OWN_BAP_URI: ${OWN_BAP_URI:-http://localhost:3000/own/bap}
+      OWN_BPP_URI: ${OWN_BPP_URI:-http://localhost:3000/own/bpp}
+      DEMO_SUBSCRIBER_URL: ${DEMO_SUBSCRIBER_URL:-http://localhost:3000/mock-np}
+      ONDC_AUTH_MODE: ${ONDC_AUTH_MODE:-disabled}
+      ONDC_SUBSCRIBER_ID: ${ONDC_SUBSCRIBER_ID:-}
+      ONDC_UNIQUE_KEY_ID: ${ONDC_UNIQUE_KEY_ID:-}
+      ONDC_SIGNING_PRIVATE_KEY: ${ONDC_SIGNING_PRIVATE_KEY:-}
+      ONDC_SIGNING_PUBLIC_KEY: ${ONDC_SIGNING_PUBLIC_KEY:-}
+      ONDC_TRUSTED_PUBLIC_KEYS_JSON: ${ONDC_TRUSTED_PUBLIC_KEYS_JSON:-}
+      ONDC_REGISTRY_LOOKUP_URL: ${ONDC_REGISTRY_LOOKUP_URL:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: npm run dev
+    environment:
+      API_TARGET: http://api:3000
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+
+volumes:
+  mongo_data:
