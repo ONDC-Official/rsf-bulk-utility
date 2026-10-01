@@ -6,7 +6,8 @@ import {
   normalizeSubscriberUrl, stableId, unwrapPayload, validateCaseOrder, validateSettlementInputs
 } from './domain.js';
 import { seedDemoData } from './seed.js';
-import { AuthError, createOnDcAuthorization, validateAuthConfig, verifyOnDcAuthorization } from './auth.js';
+import { AuthError, validateAuthConfig, verifyOnDcAuthorization } from './auth.js';
+import { deliverPayload, resolveDeliveryTarget } from './delivery.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -38,18 +39,6 @@ function publicCase(doc) {
   if (!doc) return null;
   const { _id, source_payload, ...data } = doc;
   return { id: _id, ...data, source_payload };
-}
-
-async function deliverToMockNp(action, payload, destination = process.env.MOCK_NP_URL || `http://localhost:${port}/mock-np`) {
-  const base = normalizeSubscriberUrl(destination);
-  const body = JSON.stringify(payload);
-  const authorization = await createOnDcAuthorization(body);
-  const response = await fetch(`${base}/${action}`, {
-    method: 'POST', headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) },
-    body, signal: AbortSignal.timeout(30000)
-  });
-  const responseBody = await response.json().catch(() => ({}));
-  return { status: response.status, body: responseBody };
 }
 
 app.get('/api/health', async (_req, res, next) => {
@@ -236,6 +225,7 @@ app.post('/api/receiver-recon/send', async (req, res, next) => {
   try {
     const draft = await db().collection('receiver_drafts').findOne({ _id: req.body.draft_id });
     if (!draft) throw new InputError('Receiver reconciliation draft not found. Preview again.', 404);
+    const target = resolveDeliveryTarget(req.body.use_tunnel, draft.subscriber_url);
     const outcomes = [];
     for (const group of draft.groups) {
       const outbound = db().collection('outbound_messages');
@@ -252,7 +242,7 @@ app.post('/api/receiver-recon/send', async (req, res, next) => {
       }
       const claim = await outbound.findOneAndUpdate(
         { _id: group.message_id, status: { $in: ['queued', 'send_failed'] } },
-        { $set: { status: 'sending', updated_at: new Date() }, $inc: { attempt_count: 1 } },
+        { $set: { status: 'sending', delivery_mode: target.mode, destination_url: `${target.baseUrl}/receiver_recon`, updated_at: new Date() }, $inc: { attempt_count: 1 } },
         { returnDocument: 'after' }
       );
       if (!claim) { outcomes.push({ message_id: group.message_id, status: 'sending' }); continue; }
@@ -268,8 +258,8 @@ app.post('/api/receiver-recon/send', async (req, res, next) => {
         continue;
       }
       try {
-        const response = await deliverToMockNp('receiver_recon', group.payload, draft.subscriber_url);
-        if (response.status !== 200) throw Object.assign(new Error(`Subscriber returned HTTP ${response.status}.`), { downstream_status: response.status, response: response.body });
+        const response = await deliverPayload('receiver_recon', group.payload, target);
+        if (response.status !== 200) throw Object.assign(new Error(`${target.mode === 'tunnel' ? 'Tunnel' : 'Subscriber'} returned HTTP ${response.status}.`), { downstream_status: response.status, response: response.body });
         await db().collection('mock_settlements').bulkWrite(group.payload.message.orderbook.orders.map((order, index) => ({
           updateOne: {
             filter: { transaction_id: group.payload.context.transaction_id, order_id: order.id, receiver_id: order.receiver_app_id, cycle: 1 },
@@ -529,6 +519,7 @@ app.post('/api/cases/:id/submit', async (req, res, next) => {
       return res.json({ status: 'no_response_required' });
     }
     const messageId = draft.messageId;
+    const target = resolveDeliveryTarget(req.body.use_tunnel, record.subscriber_url);
     const outbound = db().collection('outbound_messages');
     const filter = { message_id: messageId };
     await outbound.updateOne(filter, { $setOnInsert: {
@@ -539,7 +530,7 @@ app.post('/api/cases/:id/submit', async (req, res, next) => {
     if (sent.status === 'sent') return res.json({ status: sent.status, payload: sent.payload, response: sent.response });
     const claimed = await outbound.findOneAndUpdate(
       { ...filter, status: { $in: ['queued', 'send_failed'] } },
-      { $set: { status: 'sending', updated_at: new Date() }, $inc: { attempt_count: 1 } },
+      { $set: { status: 'sending', delivery_mode: target.mode, destination_url: `${target.baseUrl}/on_receiver_recon`, updated_at: new Date() }, $inc: { attempt_count: 1 } },
       { returnDocument: 'after' }
     );
     if (!claimed) return res.json({ status: sent.status, payload: sent.payload, response: sent.response });
@@ -562,8 +553,8 @@ app.post('/api/cases/:id/submit', async (req, res, next) => {
       }
       await cases.updateOne({ _id: record._id, version: record.version }, { $set: { status: 'sending', updated_at: new Date() } });
       try {
-        const response = await deliverToMockNp('on_receiver_recon', sent.payload, record.subscriber_url || undefined);
-        if (response.status !== 200) throw Object.assign(new Error(`Subscriber returned HTTP ${response.status}.`), { downstream_status: response.status, response: response.body });
+        const response = await deliverPayload('on_receiver_recon', sent.payload, target);
+        if (response.status !== 200) throw Object.assign(new Error(`${target.mode === 'tunnel' ? 'Tunnel' : 'Subscriber'} returned HTTP ${response.status}.`), { downstream_status: response.status, response: response.body });
         await outbound.updateOne(filter, { $set: { status: 'sent', response: response.body, downstream_status: 200, sent_at: new Date(), updated_at: new Date() } });
         await cases.updateOne({ _id: record._id }, { $set: { status: 'sent', updated_at: new Date() } });
         if (sourceKeys.length) await db().collection('order_snapshots').updateMany({ _id: { $in: sourceKeys }, unsolicited_case_id: record._id }, { $set: { unsolicited_sent: true, unsolicited_send_state: 'sent', updated_at: new Date() } });

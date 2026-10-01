@@ -1,0 +1,503 @@
+{
+  "info": {
+    "name": "ONDC RSF Utility API",
+    "description": "Local API collection for the ONDC Reconciliation and Settlement workbench. Start the backend at http://localhost:3000. Inbound ONDC signature verification depends on ONDC_AUTH_MODE and the backend key configuration. Tunnel sends require TUNNEL_URL on the backend and use_tunnel=true in the request body.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "subscriber_url",
+      "value": "https://subscriber.example/ondc"
+    },
+    {
+      "key": "own_subscriber_id",
+      "value": "mock-bap.local"
+    },
+    {
+      "key": "partner_id",
+      "value": "mock-bpp.example"
+    },
+    {
+      "key": "transaction_id",
+      "value": "POSTMAN-TXN-001"
+    },
+    {
+      "key": "order_id",
+      "value": "POSTMAN-ORDER-001"
+    },
+    {
+      "key": "order_key",
+      "value": "replace-after-on-confirm"
+    },
+    {
+      "key": "draft_id",
+      "value": "replace-after-preview"
+    },
+    {
+      "key": "case_id",
+      "value": "replace-after-create"
+    },
+    {
+      "key": "case_version",
+      "value": "1"
+    },
+    {
+      "key": "message_id",
+      "value": "replace-after-send"
+    },
+    {
+      "key": "action",
+      "value": "on_receiver_recon"
+    },
+    {
+      "key": "use_tunnel",
+      "value": "false",
+      "type": "string",
+      "description": "Set to true to route sends to backend TUNNEL_URL."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "API and Mongo health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/health",
+            "description": "Returns healthy when the API can reach MongoDB."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inbound and mock callbacks",
+      "item": [
+        {
+          "name": "Receive on_confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/inbound/on_confirm",
+            "description": "Stores an on_confirm order. Adjust own_subscriber_id to match ONDC_SUBSCRIBER_ID in the backend. The returned order_key is saved for later requests.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"ONDC:NTS10\",\n    \"country\": \"IND\",\n    \"city\": \"std:080\",\n    \"action\": \"on_confirm\",\n    \"core_version\": \"1.0.0\",\n    \"bap_id\": \"{{own_subscriber_id}}\",\n    \"bap_uri\": \"http://localhost:3000/own/bap\",\n    \"bpp_id\": \"{{partner_id}}\",\n    \"bpp_uri\": \"{{subscriber_url}}\",\n    \"transaction_id\": \"{{transaction_id}}\",\n    \"message_id\": \"POSTMAN-ONCONFIRM-001\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"ttl\": \"P2D\"\n  },\n  \"message\": {\n    \"order\": {\n      \"id\": \"{{order_id}}\",\n      \"state\": \"Completed\",\n      \"provider\": {\n        \"id\": \"POSTMAN-PROVIDER\",\n        \"descriptor\": {\n          \"name\": \"Postman Demo Provider\"\n        }\n      },\n      \"quote\": {\n        \"price\": {\n          \"value\": \"120.00\",\n          \"currency\": \"INR\"\n        }\n      },\n      \"payments\": [\n        {\n          \"id\": \"POSTMAN-PAYMENT\",\n          \"collected_by\": \"BAP\",\n          \"status\": \"PAID\",\n          \"type\": \"PRE-ORDER\",\n          \"params\": {\n            \"amount\": \"120.00\",\n            \"currency\": \"INR\",\n            \"transaction_id\": \"{{transaction_id}}\"\n          },\n          \"tags\": [\n            {\n              \"descriptor\": {\n                \"code\": \"SETTLEMENT_TERMS\"\n              },\n              \"list\": [\n                {\n                  \"descriptor\": {\n                    \"code\": \"SETTLEMENT_AMOUNT\"\n                  },\n                  \"value\": \"100.00\"\n                },\n                {\n                  \"descriptor\": {\n                    \"code\": \"SETTLEMENT_TYPE\"\n                  },\n                  \"value\": \"NEFT\"\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.order_key) pm.collectionVariables.set('order_key', body.order_key);",
+                  "if (body.subscriber_url) pm.collectionVariables.set('subscriber_url', body.subscriber_url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Receive receiver_recon",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/inbound/receiver_recon",
+            "description": "Stores an incoming receiver_recon and opens a reconciliation case.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"domain\": \"ONDC:NTS10\",\n    \"country\": \"IND\",\n    \"city\": \"std:080\",\n    \"action\": \"receiver_recon\",\n    \"core_version\": \"1.0.0\",\n    \"bap_id\": \"{{own_subscriber_id}}\",\n    \"bap_uri\": \"http://localhost:3000/own/bap\",\n    \"bpp_id\": \"{{partner_id}}\",\n    \"bpp_uri\": \"{{subscriber_url}}\",\n    \"transaction_id\": \"{{transaction_id}}\",\n    \"message_id\": \"POSTMAN-RECEIVER-RECON-001\",\n    \"timestamp\": \"{{$isoTimestamp}}\",\n    \"ttl\": \"P2D\"\n  },\n  \"message\": {\n    \"orderbook\": {\n      \"orders\": [\n        {\n          \"id\": \"{{order_id}}\",\n          \"collector_app_id\": \"{{own_subscriber_id}}\",\n          \"receiver_app_id\": \"{{partner_id}}\",\n          \"payment\": {\n            \"@ondc/org/settlement_details\": [\n              {\n                \"settlement_amount\": 100,\n                \"settlement_status\": \"PAID\"\n              }\n            ]\n          }\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.case?.id) pm.collectionVariables.set('case_id', body.case.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mock NP ACK callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/mock-np/{{action}}",
+            "description": "Mock endpoint accepts receiver_recon or on_receiver_recon. The context action must match the URL action.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"context\": {\n    \"action\": \"{{action}}\",\n    \"message_id\": \"POSTMAN-MOCK-001\",\n    \"transaction_id\": \"{{transaction_id}}\"\n  },\n  \"message\": {\n    \"orderbook\": {\n      \"orders\": []\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriber records",
+      "item": [
+        {
+          "name": "Find saved subscriber URLs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/subscriber-urls?prefix={{subscriber_url}}"
+          }
+        },
+        {
+          "name": "List collector orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/subscriber/orders?subscriber_url={{subscriber_url}}&state=unsent&query=&limit=50",
+            "description": "Use an order key from the response in Preview receiver_recon."
+          }
+        },
+        {
+          "name": "List known receiver-side orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/subscriber/known-orders?subscriber_url={{subscriber_url}}&query=&limit=50"
+          }
+        },
+        {
+          "name": "List unfinished unsolicited cases",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/subscriber/unsolicited-cases?subscriber_url={{subscriber_url}}"
+          }
+        },
+        {
+          "name": "Find received reconciliation cycles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/subscriber/reconciliations?subscriber_url={{subscriber_url}}&transaction_id={{transaction_id}}"
+          }
+        },
+        {
+          "name": "Search cases by transaction",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/transactions?transaction_id={{transaction_id}}"
+          }
+        },
+        {
+          "name": "Latest receiver_recon transaction",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/automatic/latest"
+          }
+        },
+        {
+          "name": "Inspect sent receiver_recon by order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/receiver-recon/sent?order_key={{order_key}}"
+          }
+        },
+        {
+          "name": "Get network message",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/messages/{{message_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Send receiver_recon",
+      "item": [
+        {
+          "name": "Preview selected orders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/receiver-recon/preview",
+            "description": "Creates a backend-built payload draft. Replace order_key with an unsent collector order key.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscriber_url\": \"{{subscriber_url}}\",\n  \"orders\": [\n    {\n      \"key\": \"{{order_key}}\",\n      \"status\": \"PAID\",\n      \"amounts\": [\n        \"100.00\"\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.draft_id) pm.collectionVariables.set('draft_id', body.draft_id);",
+                  "if (body.groups?.[0]?.message_id) pm.collectionVariables.set('message_id', body.groups[0].message_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send selected orders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/receiver-recon/send",
+            "description": "Set use_tunnel to true only after configuring TUNNEL_URL on the backend. Otherwise leave it false to send to the subscriber URL.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"draft_id\": \"{{draft_id}}\",\n  \"use_tunnel\": {{use_tunnel}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.groups?.[0]?.message_id) pm.collectionVariables.set('message_id', body.groups[0].message_id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Review and send on_receiver_recon",
+      "item": [
+        {
+          "name": "Create an unsolicited review from saved orders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/cases/unsolicited",
+            "description": "Creates a blank custom-order review using the latest saved routing context for this subscriber. Receive an on_confirm or receiver_recon first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscriber_url\": \"{{subscriber_url}}\",\n  \"order_keys\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.cases?.[0]?.id) pm.collectionVariables.set('case_id', body.cases[0].id);",
+                  "if (body.cases?.[0]?.version) pm.collectionVariables.set('case_version', String(body.cases[0].version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create a manual review from on_confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/cases/manual",
+            "description": "Creates a case from a pasted on_confirm payload.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payload\": {\n    \"context\": {\n      \"domain\": \"ONDC:NTS10\",\n      \"country\": \"IND\",\n      \"city\": \"std:080\",\n      \"action\": \"on_confirm\",\n      \"core_version\": \"1.0.0\",\n      \"bap_id\": \"{{own_subscriber_id}}\",\n      \"bap_uri\": \"http://localhost:3000/own/bap\",\n      \"bpp_id\": \"{{partner_id}}\",\n      \"bpp_uri\": \"{{subscriber_url}}\",\n      \"transaction_id\": \"{{transaction_id}}\",\n      \"message_id\": \"POSTMAN-ONCONFIRM-001\",\n      \"timestamp\": \"{{$isoTimestamp}}\",\n      \"ttl\": \"P2D\"\n    },\n    \"message\": {\n      \"order\": {\n        \"id\": \"{{order_id}}\",\n        \"state\": \"Completed\",\n        \"provider\": {\n          \"id\": \"POSTMAN-PROVIDER\",\n          \"descriptor\": {\n            \"name\": \"Postman Demo Provider\"\n          }\n        },\n        \"quote\": {\n          \"price\": {\n            \"value\": \"120.00\",\n            \"currency\": \"INR\"\n          }\n        },\n        \"payments\": [\n          {\n            \"id\": \"POSTMAN-PAYMENT\",\n            \"collected_by\": \"BAP\",\n            \"status\": \"PAID\",\n            \"type\": \"PRE-ORDER\",\n            \"params\": {\n              \"amount\": \"120.00\",\n              \"currency\": \"INR\",\n              \"transaction_id\": \"{{transaction_id}}\"\n            },\n            \"tags\": [\n              {\n                \"descriptor\": {\n                  \"code\": \"SETTLEMENT_TERMS\"\n                },\n                \"list\": [\n                  {\n                    \"descriptor\": {\n                      \"code\": \"SETTLEMENT_AMOUNT\"\n                    },\n                    \"value\": \"100.00\"\n                  },\n                  {\n                    \"descriptor\": {\n                      \"code\": \"SETTLEMENT_TYPE\"\n                    },\n                    \"value\": \"NEFT\"\n                  }\n                ]\n              }\n            ]\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.case?.id) pm.collectionVariables.set('case_id', body.case.id);",
+                  "if (body.case?.version) pm.collectionVariables.set('case_version', String(body.case.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get review case",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/cases/{{case_id}}"
+          }
+        },
+        {
+          "name": "Save review draft",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/cases/{{case_id}}/draft",
+            "description": "Use the current case version and include all current rows. For a received receiver_recon row, keep its source from the case response.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{case_version}},\n  \"orders\": [{\n    \"id\": \"{{order_id}}\",\n    \"assessment\": \"underpaid\",\n    \"difference_amount\": \"20.00\",\n    \"notes\": \"Postman example\",\n    \"source\": \"Pasted on_confirm\"\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.case?.version) pm.collectionVariables.set('case_version', String(body.case.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preview on_receiver_recon",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/cases/{{case_id}}/preview"
+          }
+        },
+        {
+          "name": "Submit review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/cases/{{case_id}}/submit",
+            "description": "Set use_tunnel to true only after configuring TUNNEL_URL on the backend. The backend builds the payload immediately before sending.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{case_version}},\n  \"use_tunnel\": {{use_tunnel}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.version) pm.collectionVariables.set('case_version', String(body.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete review case",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/api/cases/{{case_id}}?subscriber_url={{subscriber_url}}"
+          }
+        }
+      ]
+    }
+  ]
+}
