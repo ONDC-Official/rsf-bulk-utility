@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 20
 
-  api:
+  rsf-api:
     image: ghcr.io/ondc-official/rsf-bulk-utility-backend:latest
     build:
       context: .
@@ -25,7 +25,7 @@ services:
       PORT: 3000
       MONGODB_URI: mongodb://${MONGO_USER:-rsf_mock}:${MONGO_PASSWORD:-local_mock_only}@mongo:27017/rsf_utility?authSource=admin
       DATABASE_NAME: rsf_utility
-      MOCK_NP_URL: http://api:3000/mock-np
+      MOCK_NP_URL: http://rsf-api:3000/mock-np
       SEED_DEMO: ${SEED_DEMO:-true}
       OWN_BAP_URI: ${OWN_BAP_URI:-http://localhost:3000/own/bap}
       OWN_BPP_URI: ${OWN_BPP_URI:-http://localhost:3000/own/bpp}
@@ -50,7 +50,7 @@ services:
       dockerfile: Dockerfile.frontend
     restart: unless-stopped
     depends_on:
-      - api
+      - rsf-api
     ports:
       - "5173:80"
 
