@@ -23,10 +23,43 @@ export function resolveDeliveryTarget(useTunnel, subscriberUrl, env = process.en
 export async function deliverPayload(action, payload, target) {
   const body = JSON.stringify(payload);
   const authorization = await createOnDcAuthorization(body);
-  const response = await fetch(`${target.baseUrl}/${action}`, {
-    method: 'POST', headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) },
-    body, signal: AbortSignal.timeout(30000)
-  });
-  const responseBody = await response.json().catch(() => ({}));
+  const url = `${target.baseUrl}/${action}`;
+  const headers = { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) };
+  const tunnelRequest = target.mode === 'tunnel'
+    ? { url, method: 'POST', headers, body }
+    : null;
+
+  if (tunnelRequest) console.info('[TUNNEL request]', JSON.stringify(tunnelRequest));
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST', headers, body, signal: AbortSignal.timeout(30000)
+    });
+  } catch (error) {
+    if (tunnelRequest) {
+      console.error('[TUNNEL transport error]', JSON.stringify({
+        request: tunnelRequest,
+        error: { name: error.name, message: error.message, cause: error.cause?.message }
+      }));
+    }
+    throw error;
+  }
+
+  const responseText = await response.text();
+  let responseBody = {};
+  try { responseBody = responseText ? JSON.parse(responseText) : {}; }
+  catch { responseBody = {}; }
+
+  if (tunnelRequest) {
+    console.info('[TUNNEL response]', JSON.stringify({
+      url,
+      status: response.status,
+      status_text: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: responseText
+    }));
+  }
+
   return { status: response.status, body: responseBody };
 }
