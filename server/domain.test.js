@@ -5,9 +5,10 @@ import {
   validateSettlementInputs
 } from './domain.js';
 
-test('scopes arbitrary participants by BPP URI without matching the signing identity', () => {
-  const context = { bap_id: 'external-bap', bap_uri: 'https://buyer.test/protocol', bpp_id: 'external-bpp', bpp_uri: 'https://NP.test:443/ondc/' };
-  assert.deepEqual(deriveSubscriber(context), { subscriber_url: 'https://np.test/ondc' });
+test('scopes arbitrary participants by BAP URI without matching the signing identity', () => {
+  const context = { bap_id: 'external-bap', bap_uri: 'https://BUYER.test:443/protocol/', bpp_id: 'external-bpp', bpp_uri: 'https://np.test/ondc/' };
+  assert.deepEqual(deriveSubscriber(context), { subscriber_url: 'https://buyer.test/protocol' });
+  assert.deepEqual(deriveSubscriber({ ...context, bpp_uri: 'https://another-seller.test' }), deriveSubscriber(context));
   assert.deepEqual(deriveSubscriber({ ...context, bap_id: context.bpp_id }), deriveSubscriber(context));
   assert.throws(() => deriveSubscriber({ ...context, bap_uri: 'invalid' }), /valid HTTP or HTTPS/);
   assert.throws(() => deriveSubscriber({ ...context, bpp_uri: 'invalid' }), /valid HTTP or HTTPS/);

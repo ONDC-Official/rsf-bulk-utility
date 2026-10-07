@@ -36,8 +36,8 @@ export function normalizeSubscriberUrl(value) {
 
 export function deriveSubscriber(context) {
   if (!context?.bap_id || !context?.bpp_id) throw new InputError('Context must include bap_id and bpp_id.');
-  normalizeSubscriberUrl(context.bap_uri);
-  return { subscriber_url: normalizeSubscriberUrl(context.bpp_uri) };
+  normalizeSubscriberUrl(context.bpp_uri);
+  return { subscriber_url: normalizeSubscriberUrl(context.bap_uri) };
 }
 
 export function validateSettlementInputs(expectedMinor, status, amounts) {
