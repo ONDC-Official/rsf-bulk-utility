@@ -1,7 +1,7 @@
 # ONDC RSF Mock Workbench
 
 Created: unknown
-Updated: 2026-10-07 09:56:26 IST (UTC+05:30)
+Updated: 2026-10-07 10:15:40 IST (UTC+05:30)
 
 MongoDB-backed workbench for testing `receiver_recon` and `on_receiver_recon` with a mock NP. The first screen scopes the workspace by BPP URI (a workspace key, independent of the tunnel destination). Inbound `on_confirm` messages populate saved orders and routing context; sending is operator initiated.
 
@@ -64,3 +64,8 @@ The mock receiver is `/mock-np/:action`. ONDC Authorization signing and inbound 
 The provisional overpaid response code and the proposed `UNDERPAID`/`OVERPAID` settlement-status values require confirmation against the target NTS schema before contract-conformance claims.
 
 Run focused tests with `npm test`.
+
+## Publish deployment images
+Added: 2026-10-07 10:15:40 IST (UTC+05:30)
+
+The EKS nodes run AMD64. Publish both images with `scripts/publish-images.sh <tag>`; the script builds explicitly for `linux/amd64` and checks the architecture before pushing. Update both RSF image tags in automation-iac after publishing. Confirm rollout completion and the actual ready pod images; the deployment template and ready count alone can describe a new template with an old serving pod.
