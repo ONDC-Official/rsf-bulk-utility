@@ -100,7 +100,6 @@ function App() {
     try {
       const value = normalizeUrl(urlInput);
       setSubscriber(value);
-      setUseTunnel(true);
       setReceiverSelection({});
       setReceiverDraft(null);
       setUnsolicitedCases([]);
