@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildOnReceiverRecon, buildReceiverReconGroup, createCaseOrder, deriveSubscriber, normalizeSubscriberUrl,
-  validateSettlementInputs
+  normalizeNtsContext, validateSettlementInputs
 } from './domain.js';
 
 test('scopes arbitrary participants by BAP URI without matching the signing identity', () => {
@@ -68,10 +68,42 @@ test('keeps one orderbook row and creates a detail for each amount', () => {
   };
   const payload = buildReceiverReconGroup([{ snapshot, status: 'PAID', amountMinors: [10000, 7460] }], 'msg-1', '2026-09-29T00:00:00.000Z');
   assert.equal(payload.context.action, 'receiver_recon');
-  for (const key of Object.keys(context)) assert.deepEqual(payload.context[key], context[key]);
+  for (const key of ['transaction_id', 'bap_id', 'bap_uri', 'bpp_id', 'bpp_uri', 'country', 'city', 'ttl']) assert.deepEqual(payload.context[key], context[key]);
+  assert.equal(payload.context.core_version, '1.0.0');
+  assert.equal('location' in payload.context, false);
+  assert.equal('custom' in payload.context, false);
   assert.deepEqual(snapshot.context, context);
   assert.equal(payload.message.orderbook.orders.length, 1);
   const details = payload.message.orderbook.orders[0].payment['@ondc/org/settlement_details'];
   assert.deepEqual(details.map(detail => detail.settlement_amount), [100, 74.6]);
   assert.notEqual(details[0].settlement_reference, details[1].settlement_reference);
+});
+
+test('maps v2 source context to NTS 1.0.0 fields for both actions and stable retries', () => {
+  const source = {
+    domain: 'ONDC:TRV11', version: '2.0.0', core_version: '2.0.0',
+    bap_id: 'abc.rsp.com', bap_uri: 'https://abc.rsp.com',
+    bpp_id: 'abc.receiverapp.com', bpp_uri: 'https://abc.receiverapp.com',
+    transaction_id: 'T1', message_id: 'M1', timestamp: '2026-10-07T00:00:00.000Z', ttl: 'P2D',
+    location: { country: { code: 'IND' }, city: { code: 'std:080' } },
+    collector_app_id: 'collector', receiver_app_id: 'receiver', extra: 'must-not-leak'
+  };
+  const original = structuredClone(source);
+  for (const action of ['receiver_recon', 'on_receiver_recon']) {
+    const context = normalizeNtsContext({ ...source, action });
+    assert.deepEqual(context, {
+      domain: 'ONDC:NTS10', country: 'IND', city: 'std:080', action, core_version: '1.0.0',
+      bap_id: source.bap_id, bap_uri: source.bap_uri, bpp_id: source.bpp_id, bpp_uri: source.bpp_uri,
+      transaction_id: 'T1', message_id: 'M1', timestamp: source.timestamp, ttl: 'P2D'
+    });
+    assert.deepEqual(normalizeNtsContext(context), context);
+  }
+  const record = { _id: 'v2-case', version: 1, context: source, updated_at: source.timestamp };
+  const response = buildOnReceiverRecon(record, [{ id: 'O1', difference_minor: 100, assessment: 'underpaid' }]);
+  assert.equal(response.payload.context.country, 'IND');
+  assert.equal(response.payload.context.city, 'std:080');
+  assert.equal('version' in response.payload.context, false);
+  assert.equal('location' in response.payload.context, false);
+  assert.equal(response.payload.message.orderbook.orders[0].collector_app_id, 'collector');
+  assert.deepEqual(source, original);
 });

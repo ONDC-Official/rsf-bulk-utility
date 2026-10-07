@@ -3,7 +3,7 @@ import { db, connectDatabase, closeDatabase } from './db.js';
 import {
   InputError, amountToMinor, buildOnReceiverRecon, buildReceiverReconGroup,
   createCaseOrder, deriveSubscriber, minorToString, newCaseId, normalizeOnConfirm,
-  normalizeSubscriberUrl, stableId, unwrapPayload, validateCaseOrder, validateSettlementInputs
+  normalizeSubscriberUrl, normalizeNtsContext, stableId, unwrapPayload, validateCaseOrder, validateSettlementInputs
 } from './domain.js';
 import { seedDemoData } from './seed.js';
 import { AuthError, validateAuthConfig, verifyOnDcAuthorization } from './auth.js';
@@ -227,6 +227,7 @@ app.post('/api/receiver-recon/send', async (req, res, next) => {
     const target = resolveDeliveryTarget();
     const outcomes = [];
     for (const group of draft.groups) {
+      group.payload = { ...group.payload, context: normalizeNtsContext(group.payload.context) };
       const outbound = db().collection('outbound_messages');
       await outbound.updateOne({ _id: group.message_id }, { $setOnInsert: {
         _id: group.message_id, message_id: group.message_id, action: 'receiver_recon',
@@ -241,7 +242,7 @@ app.post('/api/receiver-recon/send', async (req, res, next) => {
       }
       const claim = await outbound.findOneAndUpdate(
         { _id: group.message_id, status: { $in: ['queued', 'send_failed'] } },
-        { $set: { status: 'sending', delivery_mode: target.mode, destination_url: `${target.baseUrl}/receiver_recon`, updated_at: new Date() }, $inc: { attempt_count: 1 } },
+        { $set: { status: 'sending', payload: group.payload, delivery_mode: target.mode, destination_url: `${target.baseUrl}/receiver_recon`, updated_at: new Date() }, $inc: { attempt_count: 1 } },
         { returnDocument: 'after' }
       );
       if (!claim) { outcomes.push({ message_id: group.message_id, status: 'sending' }); continue; }
@@ -530,7 +531,7 @@ app.post('/api/cases/:id/submit', async (req, res, next) => {
     if (sent.status === 'sent') return res.json({ status: sent.status, payload: sent.payload, response: sent.response });
     const claimed = await outbound.findOneAndUpdate(
       { ...filter, status: { $in: ['queued', 'send_failed'] } },
-      { $set: { status: 'sending', delivery_mode: target.mode, destination_url: `${target.baseUrl}/on_receiver_recon`, updated_at: new Date() }, $inc: { attempt_count: 1 } },
+      { $set: { status: 'sending', payload: { ...sent.payload, context: normalizeNtsContext(sent.payload.context) }, delivery_mode: target.mode, destination_url: `${target.baseUrl}/on_receiver_recon`, updated_at: new Date() }, $inc: { attempt_count: 1 } },
       { returnDocument: 'after' }
     );
     if (!claimed) return res.json({ status: sent.status, payload: sent.payload, response: sent.response });

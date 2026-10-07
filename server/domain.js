@@ -119,23 +119,26 @@ export function createMockSettlement(order, now = new Date()) {
   };
 }
 
-function freshNtsContext(source, action, messageId, timestamp = new Date().toISOString()) {
+export function normalizeNtsContext(source) {
   return {
-    ...source,
-    domain: process.env.NTS_DOMAIN || 'ONDC:NTS10',
+    domain: 'ONDC:NTS10',
     country: source.country || source.location?.country?.code || 'IND',
     city: source.city || source.location?.city?.code || 'std:080',
-    action,
-    core_version: process.env.NTS_CORE_VERSION || '1.0.0',
+    action: source.action,
+    core_version: '1.0.0',
     bap_id: source.bap_id,
     bap_uri: source.bap_uri,
     bpp_id: source.bpp_id,
     bpp_uri: source.bpp_uri,
     transaction_id: source.transaction_id,
-    message_id: messageId,
-    timestamp,
+    message_id: source.message_id,
+    timestamp: source.timestamp,
     ttl: source.ttl || process.env.NTS_TTL || 'P2D'
   };
+}
+
+function freshNtsContext(source, action, messageId, timestamp = new Date().toISOString()) {
+  return normalizeNtsContext({ ...source, action, message_id: messageId, timestamp });
 }
 
 export function buildReceiverRecon(order, settlement) {
