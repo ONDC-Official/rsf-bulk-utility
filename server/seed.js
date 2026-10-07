@@ -2,18 +2,18 @@ import { db } from './db.js';
 import { amountToMinor, createCaseOrder, deriveSubscriber, normalizeOnConfirm, stableId } from './domain.js';
 
 const subscriberUrl = process.env.DEMO_SUBSCRIBER_URL || 'http://localhost:3000/mock-np';
-const ownSubscriberId = process.env.ONDC_SUBSCRIBER_ID;
-const ownBapUri = process.env.OWN_BAP_URI || 'http://localhost:3000/own/bap';
-const ownBppUri = process.env.OWN_BPP_URI || 'http://localhost:3000/own/bpp';
+const demoParticipantId = 'demo-bap.local';
+const demoBapUri = 'https://demo-bap.example/protocol';
+const demoBppUri = subscriberUrl;
 
-function onConfirm(orderId, transactionId, expected, ownCollector) {
+function onConfirm(orderId, transactionId, expected, buyerIsDemo) {
   const context = {
     domain: 'ONDC:TRV11', action: 'on_confirm', version: '2.0.0',
     transaction_id: transactionId, message_id: `demo-${orderId}`,
-    bap_id: ownCollector ? ownSubscriberId : 'demo-subscriber.local',
-    bap_uri: ownCollector ? ownBapUri : subscriberUrl,
-    bpp_id: ownCollector ? 'demo-subscriber.local' : ownSubscriberId,
-    bpp_uri: ownCollector ? subscriberUrl : ownBppUri,
+    bap_id: buyerIsDemo ? demoParticipantId : 'demo-subscriber.local',
+    bap_uri: buyerIsDemo ? demoBapUri : subscriberUrl,
+    bpp_id: buyerIsDemo ? 'demo-subscriber.local' : demoParticipantId,
+    bpp_uri: buyerIsDemo ? subscriberUrl : demoBppUri,
     location: { country: { code: 'IND' }, city: { code: 'std:080' } },
     timestamp: '2026-09-29T10:35:00.000Z', ttl: 'PT30S'
   };
@@ -44,7 +44,6 @@ async function seedOnConfirm(payload) {
   await db().collection('order_snapshots').updateOne({ _id: key }, { $setOnInsert: {
     _id: key, transaction_id: parsed.transactionId, order_id: parsed.orderId,
     receiver_id: receiverId, collector_id: collectorId, subscriber_url: route.subscriber_url,
-    local_role: route.own_side === 'BAP' ? 'collector' : 'receiver',
     receiver_send_state: 'unsent', has_received_recon: false,
     context: payload.context, payment: parsed.payment, settlement_type: parsed.settlementType,
     provider_name: parsed.order.provider.descriptor.name, expected_minor: parsed.expectedSettlementMinor,
@@ -56,7 +55,7 @@ async function seedOnConfirm(payload) {
     bap_id: payload.context.bap_id, bap_uri: payload.context.bap_uri,
     bpp_id: payload.context.bpp_id, bpp_uri: payload.context.bpp_uri,
     collected_by: 'BAP', subscriber_url: route.subscriber_url,
-    external_side: route.external_side, source_message_id: inboundId, created_at: new Date()
+    context: payload.context, source_message_id: inboundId, created_at: new Date()
   } }, { upsert: true });
 }
 
@@ -67,7 +66,7 @@ async function seedReceivedRecon() {
     context: { domain: 'ONDC:NTS10', action: 'receiver_recon', core_version: '1.0.0',
       transaction_id: transactionId, message_id: inboundId,
       bap_id: 'demo-subscriber.local', bap_uri: subscriberUrl,
-      bpp_id: ownSubscriberId, bpp_uri: ownBppUri,
+      bpp_id: demoParticipantId, bpp_uri: demoBppUri,
       country: 'IND', city: 'std:080', timestamp: '2026-09-29T10:42:00.000Z', ttl: 'P2D' },
     message: { orderbook: { orders: [
       { id: 'REC-10021', payment: { '@ondc/org/settlement_details': [{ settlement_amount: 1250, settlement_status: 'PAID' }] } },

@@ -5,33 +5,13 @@ import {
   validateSettlementInputs
 } from './domain.js';
 
-test('derives the external subscriber from the non-own side', () => {
-  const ownSubscriberId = 'workbench.example';
-  const route = deriveSubscriber({ bap_id: ownSubscriberId, bap_uri: 'https://public-callback.test/bap', bpp_id: 'external', bpp_uri: 'https://np.test/ondc/' }, ownSubscriberId);
-  assert.equal(route.subscriber_url, 'https://np.test/ondc');
-  assert.equal(route.own_side, 'BAP');
-  assert.equal(route.external_side, 'BPP');
-  const reverse = deriveSubscriber({ bap_id: 'external', bap_uri: 'https://np.test/buyer/', bpp_id: ownSubscriberId, bpp_uri: 'http://local.test/bpp' }, ownSubscriberId);
-  assert.equal(reverse.subscriber_url, 'https://np.test/buyer');
-  assert.equal(reverse.own_side, 'BPP');
-  assert.equal(reverse.external_side, 'BAP');
-  assert.throws(() => deriveSubscriber({ bap_id: ownSubscriberId, bpp_id: ownSubscriberId }, ownSubscriberId), /Exactly one participant/);
-  assert.throws(() => deriveSubscriber({ bap_id: 'external-bap', bpp_id: 'external-bpp' }, ownSubscriberId), /Exactly one participant/);
-  assert.throws(() => deriveSubscriber({ bap_id: ownSubscriberId, bpp_id: 'external', bpp_uri: 'invalid' }, ownSubscriberId), /valid HTTP or HTTPS/);
-  assert.equal(normalizeSubscriberUrl('https://NP.test:443/ondc/'), 'https://np.test/ondc');
-});
-
-test('uses the signing subscriber ID for default role detection', () => {
-  const originalId = process.env.ONDC_SUBSCRIBER_ID;
-  try {
-    process.env.ONDC_SUBSCRIBER_ID = 'workbench.example';
-    assert.equal(deriveSubscriber({ bap_id: 'workbench.example', bpp_id: 'external', bpp_uri: 'https://np.test' }).own_side, 'BAP');
-    delete process.env.ONDC_SUBSCRIBER_ID;
-    assert.throws(() => deriveSubscriber({}), /ONDC_SUBSCRIBER_ID must be configured/);
-  } finally {
-    if (originalId === undefined) delete process.env.ONDC_SUBSCRIBER_ID;
-    else process.env.ONDC_SUBSCRIBER_ID = originalId;
-  }
+test('scopes arbitrary participants by BPP URI without matching the signing identity', () => {
+  const context = { bap_id: 'external-bap', bap_uri: 'https://buyer.test/protocol', bpp_id: 'external-bpp', bpp_uri: 'https://NP.test:443/ondc/' };
+  assert.deepEqual(deriveSubscriber(context), { subscriber_url: 'https://np.test/ondc' });
+  assert.deepEqual(deriveSubscriber({ ...context, bap_id: context.bpp_id }), deriveSubscriber(context));
+  assert.throws(() => deriveSubscriber({ ...context, bap_uri: 'invalid' }), /valid HTTP or HTTPS/);
+  assert.throws(() => deriveSubscriber({ ...context, bpp_uri: 'invalid' }), /valid HTTP or HTTPS/);
+  assert.throws(() => deriveSubscriber({ ...context, bap_id: '' }), /bap_id and bpp_id/);
 });
 
 test('keeps an on_receiver_recon preview stable for the same case version', () => {
@@ -78,7 +58,7 @@ test('builds custom responses with only order ID, difference and assessment', ()
 });
 
 test('keeps one orderbook row and creates a detail for each amount', () => {
-  const context = { transaction_id: 'tx-1', bap_id: 'own-bap', bap_uri: 'http://local.test/bap', bpp_id: 'external', bpp_uri: 'https://np.test/ondc', location: { country: { code: 'IND' }, city: { code: 'std:080' } } };
+  const context = { transaction_id: 'tx-1', bap_id: 'own-bap', bap_uri: 'http://local.test/bap', bpp_id: 'external', bpp_uri: 'https://np.test/ondc', country: 'IND', city: 'std:011', ttl: 'P1D', custom: { marker: 'preserved' }, location: { country: { code: 'IND' }, city: { code: 'std:080' } } };
   const snapshot = {
     _id: 'order-key', order_id: 'O1', transaction_id: 'tx-1', context,
     collector_id: 'own-bap', receiver_id: 'external', gross_minor: 18000,
@@ -87,6 +67,8 @@ test('keeps one orderbook row and creates a detail for each amount', () => {
   };
   const payload = buildReceiverReconGroup([{ snapshot, status: 'PAID', amountMinors: [10000, 7460] }], 'msg-1', '2026-09-29T00:00:00.000Z');
   assert.equal(payload.context.action, 'receiver_recon');
+  for (const key of Object.keys(context)) assert.deepEqual(payload.context[key], context[key]);
+  assert.deepEqual(snapshot.context, context);
   assert.equal(payload.message.orderbook.orders.length, 1);
   const details = payload.message.orderbook.orders[0].payment['@ondc/org/settlement_details'];
   assert.deepEqual(details.map(detail => detail.settlement_amount), [100, 74.6]);

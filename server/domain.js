@@ -34,12 +34,10 @@ export function normalizeSubscriberUrl(value) {
   } catch { throw new InputError('Enter a valid HTTP or HTTPS subscriber URL.'); }
 }
 
-export function deriveSubscriber(context, ownSubscriberId = process.env.ONDC_SUBSCRIBER_ID) {
-  if (!ownSubscriberId) throw new InputError('ONDC_SUBSCRIBER_ID must be configured.', 500);
-  const bapOwn = context?.bap_id === ownSubscriberId;
-  const bppOwn = context?.bpp_id === ownSubscriberId;
-  if (bapOwn === bppOwn) throw new InputError('Exactly one participant in the incoming context must be this mock system.');
-  return { subscriber_url: normalizeSubscriberUrl(bapOwn ? context.bpp_uri : context.bap_uri), own_side: bapOwn ? 'BAP' : 'BPP', external_side: bapOwn ? 'BPP' : 'BAP' };
+export function deriveSubscriber(context) {
+  if (!context?.bap_id || !context?.bpp_id) throw new InputError('Context must include bap_id and bpp_id.');
+  normalizeSubscriberUrl(context.bap_uri);
+  return { subscriber_url: normalizeSubscriberUrl(context.bpp_uri) };
 }
 
 export function validateSettlementInputs(expectedMinor, status, amounts) {
@@ -123,9 +121,10 @@ export function createMockSettlement(order, now = new Date()) {
 
 function freshNtsContext(source, action, messageId, timestamp = new Date().toISOString()) {
   return {
+    ...source,
     domain: process.env.NTS_DOMAIN || 'ONDC:NTS10',
-    country: source.location?.country?.code || 'IND',
-    city: source.location?.city?.code || 'std:080',
+    country: source.country || source.location?.country?.code || 'IND',
+    city: source.city || source.location?.city?.code || 'std:080',
     action,
     core_version: process.env.NTS_CORE_VERSION || '1.0.0',
     bap_id: source.bap_id,
@@ -135,7 +134,7 @@ function freshNtsContext(source, action, messageId, timestamp = new Date().toISO
     transaction_id: source.transaction_id,
     message_id: messageId,
     timestamp,
-    ttl: process.env.NTS_TTL || 'P2D'
+    ttl: source.ttl || process.env.NTS_TTL || 'P2D'
   };
 }
 

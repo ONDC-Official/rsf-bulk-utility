@@ -21,7 +21,7 @@ function signingConfig() {
 export function validateAuthConfig() {
   if (!['disabled', 'optional', 'required'].includes(mode)) throw new Error('ONDC_AUTH_MODE must be disabled, optional, or required.');
   const config = signingConfig();
-  if (!config.subscriberId) throw new Error('ONDC_SUBSCRIBER_ID is required for participant identity and role detection.');
+  if (!config.subscriberId) throw new Error('ONDC_SUBSCRIBER_ID is required for the signing identity.');
   const anySigningValue = Boolean(config.privateKey || config.subscriberUniqueKeyId);
   const hasSigner = Object.values(config).every(Boolean);
   if (anySigningValue && !hasSigner) throw new Error('Set ONDC_SUBSCRIBER_ID, ONDC_UNIQUE_KEY_ID, and ONDC_SIGNING_PRIVATE_KEY together.');

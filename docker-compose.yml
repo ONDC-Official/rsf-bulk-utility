@@ -28,8 +28,6 @@ services:
       MOCK_NP_URL: http://rsf-api:3000/mock-np
       TUNNEL_URL: ${TUNNEL_URL:-${tunnel_url:-}}
       SEED_DEMO: ${SEED_DEMO:-true}
-      OWN_BAP_URI: ${OWN_BAP_URI:-http://localhost:3000/own/bap}
-      OWN_BPP_URI: ${OWN_BPP_URI:-http://localhost:3000/own/bpp}
       DEMO_SUBSCRIBER_URL: ${DEMO_SUBSCRIBER_URL:-http://localhost:3000/mock-np}
       ONDC_AUTH_MODE: ${ONDC_AUTH_MODE:-disabled}
       ONDC_SUBSCRIBER_ID: ${ONDC_SUBSCRIBER_ID:-}

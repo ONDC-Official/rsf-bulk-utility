@@ -118,12 +118,6 @@ td select { min-width: 138px; margin: 0; }
 .action-bar { position: fixed; z-index: 5; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 62px; padding: 10px max(28px, calc((100vw - 1264px) / 2)); border-top: 1px solid var(--line); background: #fff; }
 .action-bar > span { color: var(--muted); font-size: 12px; }
 .action-bar > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.tunnel-toggle { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; white-space: nowrap; font-size: 13px; cursor: pointer; }
-.tunnel-toggle input { appearance: none; position: relative; flex-shrink: 0; width: 36px; height: 20px; min-height: 0; margin: 0; padding: 0; border: 1px solid #aeb7bd; border-radius: 12px; background: #d3d8dc; cursor: inherit; }
-.tunnel-toggle input::before { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
-.tunnel-toggle input:checked { border-color: var(--green); background: var(--green); }
-.tunnel-toggle input:checked::before { transform: translateX(16px); }
-.tunnel-toggle:has(input:disabled) { opacity: 0.6; cursor: default; }
 .modal-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 16px; background: #18201d88; }
 .modal { width: min(820px, 100%); max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; background: #fff; border: 1px solid var(--line); border-radius: 5px; }
 .modal header, .modal footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 16px; }

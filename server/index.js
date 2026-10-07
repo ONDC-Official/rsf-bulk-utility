@@ -51,17 +51,16 @@ app.post('/api/inbound/on_confirm', async (req, res, next) => {
     const raw = req.body;
     await verifyOnDcAuthorization({ header: req.get('authorization'), bodyText: req.rawBody, context: raw?.context || raw?.payload?.context });
     const order = normalizeOnConfirm(raw);
-    const inbound = await saveInbound({ action: 'on_confirm', raw, payload: order.raw });
     const route = deriveSubscriber(order.context);
     const collectorSide = order.payment.collected_by;
     if (!['BAP', 'BPP'].includes(collectorSide)) throw new InputError('on_confirm payment.collected_by must be BAP or BPP.');
     const collectorId = collectorSide === 'BAP' ? order.context.bap_id : order.context.bpp_id;
     const receiverId = collectorSide === 'BAP' ? order.context.bpp_id : order.context.bap_id;
-    const localRole = collectorSide === route.own_side ? 'collector' : 'receiver';
+    const inbound = await saveInbound({ action: 'on_confirm', raw, payload: order.raw });
     const snapshot = {
       _id: stableId('ORDER', [order.transactionId, order.orderId, receiverId], 32),
       transaction_id: order.transactionId, order_id: order.orderId, receiver_id: receiverId,
-      collector_id: collectorId, subscriber_url: route.subscriber_url, local_role: localRole,
+      collector_id: collectorId, subscriber_url: route.subscriber_url,
       receiver_send_state: 'unsent', has_received_recon: false,
       context: order.context, payment: order.payment, settlement_type: order.settlementType,
       provider_name: order.order.provider?.descriptor?.name || '',
@@ -75,9 +74,9 @@ app.post('/api/inbound/on_confirm', async (req, res, next) => {
       bap_id: order.context.bap_id, bap_uri: order.context.bap_uri,
       bpp_id: order.context.bpp_id, bpp_uri: order.context.bpp_uri,
       collected_by: collectorSide, subscriber_url: route.subscriber_url,
-      external_side: route.external_side, source_message_id: inbound.id, created_at: new Date()
+      context: order.context, source_message_id: inbound.id, created_at: new Date()
     } }, { upsert: true });
-    res.status(inbound.duplicate ? 200 : 202).json({ duplicate: inbound.duplicate, order_key: snapshot._id, subscriber_url: route.subscriber_url, local_role: localRole });
+    res.status(inbound.duplicate ? 200 : 202).json({ duplicate: inbound.duplicate, order_key: snapshot._id, subscriber_url: route.subscriber_url });
   } catch (error) { next(error); }
 });
 
@@ -88,8 +87,8 @@ app.post('/api/inbound/receiver_recon', async (req, res, next) => {
     await verifyOnDcAuthorization({ header: req.get('authorization'), bodyText: req.rawBody, context: payload?.context });
     if (payload?.context?.action !== 'receiver_recon') throw new InputError('Payload context.action must be receiver_recon.');
     if (!payload.context.transaction_id || !Array.isArray(payload.message?.orderbook?.orders)) throw new InputError('receiver_recon requires transaction_id and message.orderbook.orders[].');
-    const inbound = await saveInbound({ action: 'receiver_recon', raw, payload });
     const route = deriveSubscriber(payload.context);
+    const inbound = await saveInbound({ action: 'receiver_recon', raw, payload });
     if (inbound.duplicate) {
       const existing = await db().collection('reconciliation_cases').findOne({ source_message_id: inbound.id });
       return res.status(200).json({ duplicate: true, case: publicCase(existing) });
@@ -163,7 +162,7 @@ app.get('/api/subscriber/orders', async (req, res, next) => {
   try {
     const subscriber = subscriberFromQuery(req);
     const collection = db().collection('order_snapshots');
-    const base = { subscriber_url: subscriber, local_role: 'collector' };
+    const base = { subscriber_url: subscriber };
     const state = String(req.query.state || 'unsent');
     if (!['all', 'unsent', 'sent'].includes(state)) throw new InputError('Invalid send-state filter.');
     const filter = { ...base };
@@ -200,7 +199,7 @@ app.post('/api/receiver-recon/preview', async (req, res, next) => {
     const grouped = new Map();
     for (const input of requested) {
       const snapshot = byKey.get(input.key);
-      if (!snapshot || snapshot.subscriber_url !== subscriber || snapshot.local_role !== 'collector') throw new InputError(`Order ${input.key} is not eligible for this subscriber.`, 403);
+      if (!snapshot || snapshot.subscriber_url !== subscriber) throw new InputError(`Order ${input.key} is not eligible for this subscriber.`, 403);
       if (snapshot.receiver_send_state && snapshot.receiver_send_state !== 'unsent') throw new InputError(`Order ${snapshot.order_id} is already sent or reserved.`, 409);
       const { amountMinors } = validateSettlementInputs(snapshot.expected_minor, input.status, input.amounts);
       const context = snapshot.context;
@@ -225,7 +224,7 @@ app.post('/api/receiver-recon/send', async (req, res, next) => {
   try {
     const draft = await db().collection('receiver_drafts').findOne({ _id: req.body.draft_id });
     if (!draft) throw new InputError('Receiver reconciliation draft not found. Preview again.', 404);
-    const target = resolveDeliveryTarget(req.body.use_tunnel, draft.subscriber_url);
+    const target = resolveDeliveryTarget();
     const outcomes = [];
     for (const group of draft.groups) {
       const outbound = db().collection('outbound_messages');
@@ -302,7 +301,7 @@ app.get('/api/subscriber/reconciliations', async (req, res, next) => {
 app.get('/api/subscriber/known-orders', async (req, res, next) => {
   try {
     const subscriber = subscriberFromQuery(req);
-    const filter = { subscriber_url: subscriber, local_role: 'receiver', has_received_recon: { $ne: true },
+    const filter = { subscriber_url: subscriber, has_received_recon: { $ne: true },
       unsolicited_sent: { $ne: true }, unsolicited_send_state: { $nin: ['sending', 'sent', 'send_failed'] } };
     const query = safeSearch(req.query.query);
     if (query) filter.order_id = { $regex: query, $options: 'i' };
@@ -330,21 +329,22 @@ app.post('/api/cases/unsolicited', async (req, res, next) => {
     const keys = req.body.order_keys ?? [];
     if (!Array.isArray(keys) || new Set(keys).size !== keys.length) throw new InputError('Saved order selections must be a list of distinct keys.');
     if (!keys.length) {
-      const identityFilter = { subscriber_url: subscriber, $or: [
-        { bap_id: process.env.ONDC_SUBSCRIBER_ID }, { bpp_id: process.env.ONDC_SUBSCRIBER_ID }
-      ] };
-      let route = await db().collection('routing_contexts').findOne(identityFilter, { sort: { created_at: -1, _id: -1 } });
+      const saved = await db().collection('routing_contexts').findOne({ subscriber_url: subscriber }, { sort: { created_at: -1, _id: -1 } });
+      let route = saved?.context;
+      if (!route && saved) {
+        const snapshot = await db().collection('order_snapshots').findOne({ _id: saved._id });
+        route = snapshot?.context;
+      }
       if (!route) {
-        const previous = await db().collection('reconciliation_cases').findOne({ subscriber_url: subscriber,
-          $or: [{ 'context.bap_id': process.env.ONDC_SUBSCRIBER_ID }, { 'context.bpp_id': process.env.ONDC_SUBSCRIBER_ID }] },
-        { sort: { created_at: -1, _id: -1 } });
+        const previous = await db().collection('reconciliation_cases').findOne({ subscriber_url: subscriber },
+          { sort: { created_at: -1, _id: -1 } });
         route = previous?.context;
       }
-      if (!route || !route.bap_uri || !route.bpp_uri || deriveSubscriber(route).subscriber_url !== subscriber) {
+      if (!route || !route.bap_uri || !route.bpp_uri) {
         throw new InputError('No saved routing context for this subscriber. Receive an on_confirm or receiver_recon from this NP before creating custom orders.', 409);
       }
       const transactionId = newCaseId();
-      const collectedByBpp = route.collected_by === 'BPP';
+      const collectedByBpp = saved?.collected_by === 'BPP';
       const record = {
         _id: newCaseId(), source_type: 'unsolicited', subscriber_url: subscriber,
         transaction_id: transactionId,
@@ -363,7 +363,7 @@ app.post('/api/cases/unsolicited', async (req, res, next) => {
     const routesByKey = new Map(savedRoutes.map(route => [route._id, route]));
     const grouped = new Map();
     for (const snapshot of snapshots) {
-      if (snapshot.subscriber_url !== subscriber || snapshot.local_role !== 'receiver' || snapshot.has_received_recon || snapshot.unsolicited_sent ||
+      if (snapshot.subscriber_url !== subscriber || snapshot.has_received_recon || snapshot.unsolicited_sent ||
         (snapshot.unsolicited_send_state && snapshot.unsolicited_send_state !== 'unsent')) throw new InputError(`Order ${snapshot.order_id} is not eligible for unsolicited review.`, 409);
       const route = routesByKey.get(snapshot._id);
       if (!route || !route.bap_id || !route.bap_uri || !route.bpp_id || !route.bpp_uri || route.subscriber_url !== subscriber) throw new InputError(`Saved routing context is incomplete for ${snapshot.order_id}.`, 409);
@@ -519,7 +519,7 @@ app.post('/api/cases/:id/submit', async (req, res, next) => {
       return res.json({ status: 'no_response_required' });
     }
     const messageId = draft.messageId;
-    const target = resolveDeliveryTarget(req.body.use_tunnel, record.subscriber_url);
+    const target = resolveDeliveryTarget();
     const outbound = db().collection('outbound_messages');
     const filter = { message_id: messageId };
     await outbound.updateOne(filter, { $setOnInsert: {
