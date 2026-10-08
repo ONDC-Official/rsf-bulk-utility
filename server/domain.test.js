@@ -40,22 +40,44 @@ test('accepts settlement amounts independently of the chosen status', () => {
 
 test('uses the entered difference without calculating or validating status relationships', () => {
   const record = { _id: 'manual-case', version: 1, updated_at: new Date(), context: { transaction_id: 'fresh-tx', bap_id: 'bap', bpp_id: 'bpp' } };
-  for (const assessment of ['underpaid', 'overpaid', 'missing']) {
+  for (const assessment of ['matched', 'underpaid', 'overpaid', 'missing']) {
     const order = { ...createCaseOrder({ id: 'CUSTOM', expectedMinor: 10000, receivedMinor: 20000, assessment }), difference_minor: -125 };
     const result = buildOnReceiverRecon(record, [order]).payload.message.orderbook.orders[0];
     assert.equal(result.counterparty_diff_amount.value, '-1.25');
   }
   const matched = { ...createCaseOrder({ id: 'MATCHED', expectedMinor: 10000, receivedMinor: 1, assessment: 'matched' }), difference_minor: 999 };
-  assert.equal(buildOnReceiverRecon(record, [matched]).noResponseRequired, true);
+  assert.equal(buildOnReceiverRecon(record, [matched]).payload.message.orderbook.orders[0].counterparty_diff_amount.value, '9.99');
   assert.throws(() => buildOnReceiverRecon(record, [{ ...matched, difference_minor: null }]), /Enter a difference/);
 });
 
 test('builds custom responses with only order ID, difference and assessment', () => {
   const record = { _id: 'custom-only', version: 1, updated_at: new Date(), context: { transaction_id: 'fresh-tx', bap_id: 'bap', bpp_id: 'bpp' } };
-  for (const assessment of ['underpaid', 'overpaid', 'missing']) {
+  for (const assessment of ['matched', 'underpaid', 'overpaid', 'missing']) {
     const result = buildOnReceiverRecon(record, [{ id: 'CUSTOM', difference_minor: 723, assessment }]);
     assert.equal(result.payload.message.orderbook.orders[0].counterparty_diff_amount.value, '7.23');
   }
+});
+
+test('includes matched orders in mixed and all-matched response payloads', () => {
+  const record = { _id: 'matched-case', version: 1, updated_at: new Date('2026-10-08T00:00:00.000Z'), context: { transaction_id: 'tx', bap_id: 'bap', bpp_id: 'bpp' } };
+  const matched = { id: 'MATCHED', difference_minor: 0, assessment: 'matched', settlement_id: 'SET-1', settlement_reference_no: 'UTR-1' };
+  for (const orders of [[matched], [matched, { id: 'UNDERPAID', difference_minor: 125, assessment: 'underpaid' }]]) {
+    const draft = buildOnReceiverRecon(record, orders);
+    const outgoing = draft.payload.message.orderbook.orders;
+    assert.equal(draft.payload.context.action, 'on_receiver_recon');
+    assert.ok(draft.messageId);
+    assert.deepEqual(outgoing.map(order => order.id), orders.map(order => order.id));
+    assert.equal(outgoing[0].counterparty_recon_status, '01');
+    assert.equal(outgoing[0].counterparty_diff_amount.value, '0.00');
+    assert.equal(outgoing[0].settlement_id, 'SET-1');
+    assert.equal(outgoing[0].settlement_reference_no, 'UTR-1');
+    assert.equal('message' in outgoing[0], false);
+    if (outgoing[1]) {
+      assert.equal(outgoing[1].counterparty_recon_status, '03');
+      assert.equal(outgoing[1].message.code, 'less');
+    }
+  }
+  assert.throws(() => buildOnReceiverRecon(record, []), /at least one order/);
 });
 
 test('keeps one orderbook row and creates a detail for each amount', () => {

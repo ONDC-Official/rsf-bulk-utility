@@ -91,7 +91,7 @@ function App() {
   }, [screen, subscriber, knownReload]);
 
   const visibleReviewRows = useMemo(() => rows.filter(row => row.id.toLowerCase().includes(reviewQuery.toLowerCase()) && (reviewFilter === 'all' || row.assessment === reviewFilter)), [rows, reviewQuery, reviewFilter]);
-  const outgoingCount = rows.filter(row => row.assessment !== 'matched').length;
+  const outgoingCount = rows.length;
 
   function clearMessages() { setError(''); setNotice(''); }
   function go(next) { clearMessages(); setScreen(next); }
@@ -251,7 +251,7 @@ function App() {
     try {
       const saved = await saveReview();
       const result = await api(`/api/cases/${encodeURIComponent(saved.id)}/preview`, { method: 'POST' });
-      setModal({ title: result.noResponseRequired ? 'No response required' : 'on_receiver_recon preview', payload: result.payload || { no_response_required: true } });
+      setModal({ title: 'on_receiver_recon preview', payload: result.payload });
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -268,7 +268,7 @@ function App() {
         setNotice('HTTP 200. on_receiver_recon sent successfully.');
         setKnownReload(value => value + 1);
         setModal({ title: 'Sent on_receiver_recon', payload: { request: result.payload, response: result.response } });
-      } else setNotice(result.status === 'no_response_required' ? 'All orders matched; no response was sent.' : `Delivery status: ${result.status}`);
+      } else setNotice(`Delivery status: ${result.status}`);
     } catch (err) { setError(`${err.message} The review is preserved for retry.`); }
     finally { setSending(false); }
   }

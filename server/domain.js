@@ -280,11 +280,12 @@ function responseOrder(order, context) {
     result.message = { name: 'order not settled', code: 'missing' };
     return result;
   }
-  result.counterparty_recon_status = '03';
+  result.counterparty_recon_status = order.assessment === 'matched' ? '01' : '03';
   result.counterparty_diff_amount = {
     currency: 'INR',
     value: minorToString(order.difference_minor)
   };
+  if (order.assessment === 'matched') return result;
   result.message = order.assessment === 'overpaid'
     ? { name: 'excess amount', code: 'more' }
     : { name: 'lesser amount', code: 'less' };
@@ -292,16 +293,15 @@ function responseOrder(order, context) {
 }
 
 export function buildOnReceiverRecon(reconciliationCase, orders) {
+  if (!orders.length) throw new InputError('Add at least one order before previewing or sending.');
   for (const order of orders) validateCaseOrder(order);
-  const discrepancies = orders.filter(order => order.assessment !== 'matched');
-  if (!discrepancies.length) return { noResponseRequired: true };
   const messageId = stableId('mock-onrr', [reconciliationCase._id, String(reconciliationCase.version)], 16);
   const timestamp = new Date(reconciliationCase.updated_at || reconciliationCase.created_at).toISOString();
   const payload = {
     context: freshNtsContext(reconciliationCase.context, 'on_receiver_recon', messageId, timestamp),
-    message: { orderbook: { orders: discrepancies.map(order => responseOrder(order, reconciliationCase.context)) } }
+    message: { orderbook: { orders: orders.map(order => responseOrder(order, reconciliationCase.context)) } }
   };
-  return { payload, messageId, mockOverpaid: discrepancies.some(order => order.assessment === 'overpaid') };
+  return { payload, messageId, mockOverpaid: orders.some(order => order.assessment === 'overpaid') };
 }
 
 export function newCaseId() {

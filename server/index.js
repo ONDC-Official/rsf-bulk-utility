@@ -515,10 +515,6 @@ app.post('/api/cases/:id/submit', async (req, res, next) => {
     if (!record) throw new InputError('Reconciliation case not found.', 404);
     if (req.body.version !== record.version) throw new InputError('Draft changed after preview. Save and preview again.', 409);
     const draft = buildOnReceiverRecon(record, record.orders);
-    if (draft.noResponseRequired) {
-      await cases.updateOne({ _id: record._id, version: record.version }, { $set: { status: 'no_response_required', updated_at: new Date() } });
-      return res.json({ status: 'no_response_required' });
-    }
     const messageId = draft.messageId;
     const target = resolveDeliveryTarget();
     const outbound = db().collection('outbound_messages');

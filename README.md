@@ -1,7 +1,7 @@
 # ONDC RSF Mock Workbench
 
 Created: unknown
-Updated: 2026-10-07 18:00:44 IST (UTC+05:30)
+Updated: 2026-10-08 19:10:57 IST (UTC+05:30)
 
 MongoDB-backed workbench for testing `receiver_recon` and `on_receiver_recon` with a mock NP. The first screen scopes the workspace by BPP URI (a workspace key, independent of the tunnel destination). Inbound `on_confirm` messages populate saved orders and routing context; sending is operator initiated.
 
@@ -21,7 +21,7 @@ Open <http://localhost:5173>. The API runs on <http://localhost:3000>. MongoDB's
 With demo data enabled, the worklist has six unsent orders in the demo workspace. Send on_receiver_recon opens custom-order entry directly; received-reconciliation transaction lookup is hidden from the UI.
 
 ## Workflow
-Updated: 2026-10-07 18:00:44 IST (UTC+05:30)
+Updated: 2026-10-08 19:10:57 IST (UTC+05:30)
 
 Every outbound send and retry goes to `TUNNEL_URL`, with `/receiver_recon` or `/on_receiver_recon` appended. The lowercase `tunnel_url` variable is also accepted. A missing or invalid URL blocks sending; there is no participant or mock fallback and no delivery toggle. For local tests set `TUNNEL_URL=http://localhost:3000/mock-np` (inside Compose use `http://rsf-api:3000/mock-np`). Configure the real tunnel URL on the API container at runtime. Outbound history records the actual destination and tunnel delivery mode.
 
@@ -30,7 +30,7 @@ New inbound orders are scoped by the normalized `context.bpp_uri`, independent o
 Outbound context contains only NTS 1.0.0 fields: domain, country, city, action, core_version, participant IDs/URIs, transaction/message IDs, timestamp, and TTL. Country and city are root-level strings; inbound TRV location codes are flattened when needed. Version, location, and internal metadata are not copied into outbound context. New messages receive a new action, message ID, and timestamp. Queued/failed retries normalize the context before signing and update outbound history with the actual sent payload while preserving existing IDs and timestamps. Unsolicited reviews also receive a new transaction ID. Delivery serializes and signs that built payload once, then sends the exact same body without replacing its context with the tunnel URL.
 
 - `receiver_recon`: select unsent orders for the subscriber, enter one status and one or more settlement amounts per order, preview grouped NTS requests, then send. A successful downstream HTTP 200 locks only the orders in that request. A failed request retains its payload and can be retried with the same IDs.
-- `on_receiver_recon`: open custom-order entry directly. Custom-only reviews use the subscriber's latest saved routing context; at least one previous on_confirm or receiver_recon from that NP is required to establish its identity and routing. The call gets new transaction and message IDs. Enter each order's amounts, difference, and assessment, preview, and submit. Difference is never calculated; status-to-amount comparisons are not enforced in either flow. Basic numeric parsing, unique IDs, routing, and draft concurrency safeguards remain. There is no Review summary section. The screen waits for the downstream result and keeps the review on failure.
+- `on_receiver_recon`: open custom-order entry directly. Custom-only reviews use the subscriber's latest saved routing context; at least one previous on_confirm or receiver_recon from that NP is required to establish its identity and routing. The call gets new transaction and message IDs. Enter each order's amounts, difference, and assessment, preview, and submit. Difference is never calculated; status-to-amount comparisons are not enforced in either flow. Basic numeric parsing, unique IDs, routing, and draft concurrency safeguards remain. There is no Review summary section. All reviewed orders, including matched orders, are included in the preview and sent payload; an all-matched review still sends on_receiver_recon. The screen waits for the downstream result and keeps the review on failure.
 
 ## API
 Updated: 2026-10-07 09:56:26 IST (UTC+05:30)
