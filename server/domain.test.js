@@ -71,13 +71,37 @@ test('includes matched orders in mixed and all-matched response payloads', () =>
     assert.equal(outgoing[0].counterparty_diff_amount.value, '0.00');
     assert.equal(outgoing[0].settlement_id, 'SET-1');
     assert.equal(outgoing[0].settlement_reference_no, 'UTR-1');
-    assert.equal('message' in outgoing[0], false);
+    assert.deepEqual(outgoing[0].message, { name: 'amount matched', code: 'matched' });
     if (outgoing[1]) {
       assert.equal(outgoing[1].counterparty_recon_status, '03');
       assert.equal(outgoing[1].message.code, 'less');
     }
   }
   assert.throws(() => buildOnReceiverRecon(record, []), /at least one order/);
+});
+
+test('fills ONDC-required mock references for every assessment and preserves supplied references', () => {
+  const record = { _id: 'mock-case', version: 1, updated_at: '2026-10-09T00:00:00.000Z', context: { transaction_id: 'mock-tx', bap_id: 'bap', bpp_id: 'bpp' } };
+  const required = ['id', 'message', 'invoice_no', 'settlement_id', 'transaction_id', 'receiver_app_id', 'collector_app_id', 'order_recon_status', 'settlement_reference_no', 'counterparty_diff_amount', 'counterparty_recon_status'];
+  const orders = ['matched', 'underpaid', 'overpaid', 'missing', 'unknown'].map(assessment => ({ id: assessment, assessment, difference_minor: assessment === 'unknown' ? null : 0 }));
+  const build = (caseRecord, rows) => buildOnReceiverRecon(caseRecord, rows).payload.message.orderbook.orders;
+  const outgoing = build(record, orders);
+  for (const order of outgoing) {
+    for (const field of required) assert.ok(Object.hasOwn(order, field), `${order.id} requires ${field}`);
+    assert.match(order.invoice_no, /^MOCK-INV-/);
+    assert.match(order.settlement_id, /^MOCK-SET-/);
+    assert.match(order.settlement_reference_no, /^MOCK-UTR-/);
+    assert.equal(typeof order.message.name, 'string');
+    assert.equal(order.counterparty_diff_amount.value, '0.00');
+  }
+  assert.deepEqual(build({ ...record, version: 2 }, orders), outgoing);
+  assert.equal(new Set(outgoing.map(order => order.settlement_id)).size, orders.length);
+  assert.notEqual(build({ ...record, context: { ...record.context, transaction_id: 'other-tx' } }, orders)[0].settlement_id, outgoing[0].settlement_id);
+  const supplied = createCaseOrder({ id: 'SUPPLIED', assessment: 'matched', invoiceNo: 'INV-123', settlementId: 'SET-123', reference: 'UTR-123' });
+  const response = build(record, [{ ...supplied, difference_minor: 0 }])[0];
+  assert.equal(response.invoice_no, 'INV-123');
+  assert.equal(response.settlement_id, 'SET-123');
+  assert.equal(response.settlement_reference_no, 'UTR-123');
 });
 
 test('keeps one orderbook row and creates a detail for each amount', () => {

@@ -52,5 +52,12 @@ export async function deliverPayload(action, payload, target) {
     }));
   }
 
+  if (responseBody?.message?.ack?.status === 'NACK') {
+    const reason = responseBody.error?.message || 'Request rejected';
+    throw Object.assign(new Error(`Downstream NACK: ${reason}`), {
+      downstream_status: response.status, response: responseBody
+    });
+  }
+
   return { status: response.status, body: responseBody };
 }

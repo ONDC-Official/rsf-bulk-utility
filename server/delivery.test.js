@@ -55,3 +55,17 @@ test('posts both reconciliation actions to the tunnel with unchanged context and
   }
   assert.equal(received.length, 2);
 });
+
+test('rejects HTTP 200 NACK responses and preserves downstream validation details', async t => {
+  const rejection = { message: { ack: { status: 'NACK' } }, error: { code: '346001', message: 'Schema validation error', path: 'orders/0/invoice_no' } };
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(rejection), { status: 200, headers: { 'content-type': 'application/json' } }));
+  const target = resolveDeliveryTarget({ TUNNEL_URL: 'https://tunnel.example' });
+  for (const action of ['receiver_recon', 'on_receiver_recon']) {
+    await assert.rejects(deliverPayload(action, { context: { action } }, target), error => {
+      assert.match(error.message, /NACK: Schema validation error/);
+      assert.equal(error.downstream_status, 200);
+      assert.deepEqual(error.response, rejection);
+      return true;
+    });
+  }
+});

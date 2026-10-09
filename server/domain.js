@@ -238,7 +238,7 @@ export function buildReceiverReconGroup(entries, messageId, timestamp = new Date
   return { context: freshNtsContext(first.context, 'receiver_recon', messageId, timestamp), message: { orderbook: { orders } } };
 }
 
-export function createCaseOrder({ id, expectedMinor = null, reportedMinor = null, receivedMinor = null, assessment = 'unknown', source = '', settlementId = null, reference = null }) {
+export function createCaseOrder({ id, expectedMinor = null, reportedMinor = null, receivedMinor = null, assessment = 'unknown', source = '', invoiceNo = null, settlementId = null, reference = null }) {
   return {
     id,
     expected_minor: expectedMinor,
@@ -246,6 +246,7 @@ export function createCaseOrder({ id, expectedMinor = null, reportedMinor = null
     received_minor: receivedMinor,
     assessment,
     source,
+    invoice_no: invoiceNo,
     settlement_id: settlementId,
     settlement_reference_no: reference,
     notes: ''
@@ -260,20 +261,23 @@ export function validateCaseOrder(order) {
 }
 
 function responseOrder(order, context) {
+  const identity = [context.transaction_id, context.collector_app_id || context.bap_id, context.receiver_app_id || context.bpp_id, order.id];
   const result = {
     id: order.id,
+    invoice_no: order.invoice_no || stableId('MOCK-INV', identity, 12),
     collector_app_id: context.collector_app_id || context.bap_id,
     receiver_app_id: context.receiver_app_id || context.bpp_id,
     transaction_id: context.transaction_id,
-    order_recon_status: '02'
+    order_recon_status: '02',
+    settlement_id: order.settlement_id || stableId('MOCK-SET', identity, 12),
+    settlement_reference_no: order.settlement_reference_no || stableId('MOCK-UTR', identity, 16)
   };
   if (order.assessment === 'unknown') {
     result.counterparty_recon_status = '04';
+    result.counterparty_diff_amount = { currency: 'INR', value: '0.00' };
     result.message = { name: 'order does not exist', code: '70010' };
     return result;
   }
-  if (order.assessment !== 'missing' && order.settlement_id) result.settlement_id = order.settlement_id;
-  if (order.assessment !== 'missing' && order.settlement_reference_no) result.settlement_reference_no = order.settlement_reference_no;
   if (order.assessment === 'missing') {
     result.counterparty_recon_status = '04';
     result.counterparty_diff_amount = { currency: 'INR', value: minorToString(order.difference_minor) };
@@ -285,7 +289,10 @@ function responseOrder(order, context) {
     currency: 'INR',
     value: minorToString(order.difference_minor)
   };
-  if (order.assessment === 'matched') return result;
+  if (order.assessment === 'matched') {
+    result.message = { name: 'amount matched', code: 'matched' };
+    return result;
+  }
   result.message = order.assessment === 'overpaid'
     ? { name: 'excess amount', code: 'more' }
     : { name: 'lesser amount', code: 'less' };

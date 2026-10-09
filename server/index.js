@@ -104,7 +104,7 @@ app.post('/api/inbound/receiver_recon', async (req, res, next) => {
       const assessment = local ? (reportMinor === expectedMinor ? 'matched' : 'unknown') : 'unknown';
       rows.push(createCaseOrder({
         id: incoming.id, expectedMinor, reportedMinor: reportMinor, receivedMinor,
-        assessment, source: 'Received receiver_recon', settlementId: incoming.settlement_id || null,
+        assessment, source: 'Received receiver_recon', invoiceNo: incoming.invoice_no || null, settlementId: incoming.settlement_id || null,
         reference: incoming.settlement_reference_no || null
       }));
     }
@@ -389,7 +389,7 @@ app.post('/api/cases/unsolicited', async (req, res, next) => {
         source_order_keys: group.map(order => order._id),
         status: 'draft', version: 1,
         orders: group.map(order => createCaseOrder({ id: order.order_id, expectedMinor: order.expected_minor,
-          reportedMinor: null, receivedMinor: 0, assessment: 'missing', source: 'Saved on_confirm' })),
+          reportedMinor: null, receivedMinor: 0, assessment: 'missing', source: 'Saved on_confirm', invoiceNo: order.raw_order?.invoice_no || null })),
         created_at: new Date(), updated_at: new Date()
       };
       await db().collection('reconciliation_cases').insertOne(record);
@@ -449,7 +449,7 @@ app.post('/api/cases/manual', async (req, res, next) => {
       orders: [createCaseOrder({
         id: normalized.orderId, expectedMinor: normalized.expectedSettlementMinor,
         reportedMinor: null, receivedMinor: normalized.expectedSettlementMinor,
-        assessment: 'matched', source: 'Pasted on_confirm'
+        assessment: 'matched', source: 'Pasted on_confirm', invoiceNo: normalized.order.invoice_no || null
       })],
       created_at: new Date(), updated_at: new Date()
     };
